@@ -1,3 +1,6 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using StatifyWeb.Interfaces;
 
@@ -17,39 +20,40 @@ public class SpotifyTokenController : Controller
 	}
 	
 	[HttpGet("/callback")]
-	public async Task<ActionResult<string>> GetAccessToken([FromQuery] string code)
+	public async Task<ActionResult> GetAccessToken([FromQuery] string code)
 	{
-		if (string.IsNullOrEmpty(code))
+		var clientId = _configuration["SpotifyAPI:client-id"];
+		var clientSecret = _configuration["SpotifyAPI:client-secret"];
+		var httpClient = _httpClientFactory.CreateClient("SpotifyClient");
+
+		var queryParams = new FormUrlEncodedContent(new Dictionary<string, string>
 		{
-			return BadRequest();
-		}
+			{ "grant_type", "authorization_code" },
+			{ "code", code },
+			{ "redirect_uri", _configuration["SpotifyAPI:redirect-uri"]! },
+		});
 		
-		var tokenRequestData = new Dictionary<string, string>
-		{
-			{ "grant_type", "client_credentials" },
-			{ "client_id", _configuration["SpotifyAPI:client-id"]! },
-			{ "client_secret", _configuration["SpotifyAPI:client-secret"]! },
-		};
+		var clientCredentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{clientId}:{clientSecret}"));
 		
-		var requestContent = new FormUrlEncodedContent(tokenRequestData);
-		var response = await _httpClientFactory.CreateClient("SpotifyClient")
-			.PostAsync("https://accounts.spotify.com/api/token", requestContent);
+		httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", clientCredentials);
+				
+		var response = await httpClient.PostAsync("https://accounts.spotify.com/api/token", queryParams);
 		var responseString = await response.Content.ReadAsStringAsync();
 
+		Console.WriteLine(responseString);
+		
 		if (!response.IsSuccessStatusCode)
 		{
 			return View("Error");
 		}
 		
-		var tokenData = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(responseString);
-
-		if (tokenData != null && tokenData.TryGetValue("access_token", out var accessToken))
+		var tokenData = JsonSerializer.Deserialize<Dictionary<string, object>>(responseString);
+		if (tokenData != null)
 		{
-			Console.WriteLine($"Access token: {accessToken}");
-			await _accessTokenService.SendTokenToClient(accessToken.ToString()!);
+			Console.WriteLine($"Access token: {tokenData["access_token"]}");
+			await _accessTokenService.SendDataToClient(tokenData);
 		}
-		
+
 		return View("Success");
 	}
-	
 }

@@ -2,5 +2,5 @@ namespace StatifyWeb.Interfaces;
 
 public interface IAccessTokenService
 {
-	Task SendTokenToClient(string token);
+	Task SendDataToClient(Dictionary<string, object> data);
 }
